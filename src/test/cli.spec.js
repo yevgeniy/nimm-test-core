@@ -1,4 +1,5 @@
 const { spawn } = require("child_process");
+const NimmTestCore = require("../NimmTestCore");
 
 describe("options", () => {
   it("cli needs src", async () => {
