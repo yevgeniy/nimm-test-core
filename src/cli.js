@@ -7,6 +7,10 @@ const numberOfTries = options.getNumberOfTries();
 const discoverer = options.getDiscoverer() || require("./discoverer");
 const evaluator = options.getEvaluator() || require("./evaluator");
 const match = options.getMatch();
+const reporters = options.getReporters() || [];
+const showresult = options.getShowResult() || false;
+
+if (!reporters.length) reporters.push(require("./reporter"));
 
 if (!src) throw new Error("need --src");
 
@@ -24,4 +28,8 @@ const profile = {
   evaluator,
   match
 };
-core.run(profile);
+core.run(profile).then(res => {
+  showresult && console.log(res);
+  if (res && res.failed > 0) process.exit(1);
+  else process.exit(0);
+});

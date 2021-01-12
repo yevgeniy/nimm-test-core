@@ -339,5 +339,259 @@ describe("NimmTestCore", () => {
         ]);
       });
     });
+
+    describe("runEvaluator passed, failed, and fault response", () => {
+      let core;
+      beforeEach(() => {
+        core = new NimmTestCore();
+        core.evaluator = E;
+        core.match = /./;
+        core.numberOfTries = 2;
+        D.reset();
+      });
+      it("reports successful tests", async () => {
+        let x = 0;
+        D.describe("base", () => {
+          D.it("test2", e => {
+            e(() => true);
+          });
+          D.it("testFAIL", e => {
+            e(() => false);
+          });
+          D.it("testFAULT", e => {
+            e(() => x++ !== 0);
+          });
+          D.it("test3", e => {
+            e(() => true);
+          });
+        });
+
+        const res = await core.runEvaluator(D.report());
+        console.log(res);
+        expect(res).toEqual({
+          passedTests: ["base@test2", "base@testFAULT", "base@test3"],
+          failedTests: ["base@testFAIL"],
+          faultTests: ["base@testFAULT"],
+          failed: 1
+        });
+      });
+    });
+
+    describe("try a failed test", () => {
+      let core;
+      beforeEach(() => {
+        core = new NimmTestCore();
+        core.evaluator = E;
+        core.match = /./;
+        core.numberOfTries = 2;
+      });
+
+      it("runs a failed text x amount of times", async () => {
+        const fn = jest.fn();
+
+        let i = 0;
+        D.describe("base", () => {
+          D.it("test2", async e => {
+            fn("try", ++i);
+            await e(async () => {
+              return false;
+            });
+          });
+        });
+
+        await core.runEvaluator(D.report());
+        expect(fn.mock.calls).toEqual([
+          ["try", 1],
+          ["try", 2]
+        ]);
+      });
+      it("reruns with error thrown in beforeEach", async () => {
+        const fn = jest.fn();
+
+        let i = 0;
+        D.describe("base", () => {
+          D.beforeEach(async () => {
+            fn("beforeEach", ++i);
+            throw "";
+          });
+          D.it("test2", async e => {
+            fn("try", ++i);
+          });
+        });
+
+        await core.runEvaluator(D.report());
+        expect(fn.mock.calls).toEqual([
+          ["beforeEach", 1],
+          ["beforeEach", 2]
+        ]);
+      });
+      it("error throw in afterEach", async () => {
+        const fn = jest.fn();
+
+        let i = 0;
+        D.describe("base", () => {
+          D.afterEach(async () => {
+            fn("afterEach", ++i);
+            throw "";
+          });
+          D.it("test", async e => {
+            fn("test");
+          });
+        });
+
+        await core.runEvaluator(D.report());
+        expect(fn.mock.calls).toEqual([["test"], ["afterEach", 1]]);
+      });
+      it("error throw in after", async () => {
+        const fn = jest.fn();
+
+        let i = 0;
+        D.describe("base", () => {
+          D.afterEach(async () => {
+            fn("after", ++i);
+            throw "";
+          });
+          D.it("test", async e => {
+            fn("test");
+          });
+        });
+
+        await core.runEvaluator(D.report());
+        expect(fn.mock.calls).toEqual([["test"], ["after", 1]]);
+      });
+      it("error throw in before", async () => {
+        const fn = jest.fn();
+
+        let i = 0;
+        D.describe("base", () => {
+          D.before(async () => {
+            fn("before", ++i);
+            throw "";
+          });
+          D.it("test2", async e => {
+            fn("try", ++i);
+          });
+        });
+
+        await core.runEvaluator(D.report());
+        expect(fn.mock.calls).toEqual([
+          ["before", 1],
+          ["before", 2]
+        ]);
+      });
+
+      describe("dont rerun succesful tests", () => {
+        it("works", async () => {
+          const fn = jest.fn();
+
+          let i = 0;
+          D.describe("base", () => {
+            D.describe("f0", () => {
+              D.before(() => {
+                fn("before1");
+              });
+              D.it("test1", async e => {
+                fn("test1", ++i);
+                await e(async () => {
+                  return true;
+                });
+              });
+            });
+
+            D.describe("d1", () => {
+              D.it("test2", async e => {
+                fn("test2", ++i);
+                await e(async () => {
+                  return false;
+                });
+              });
+            });
+          });
+
+          await core.runEvaluator(D.report());
+          expect(fn.mock.calls).toEqual([
+            ["before1"],
+            ["test1", 1],
+            ["test2", 2],
+            ["test2", 3]
+          ]);
+        });
+
+        it("errors generated in after still pass the test", async () => {
+          const fn = jest.fn();
+
+          let i = 0;
+          D.describe("base", () => {
+            D.describe("f0", () => {
+              D.after(() => {
+                fn("after1");
+                throw "";
+              });
+              D.it("test1", async e => {
+                fn("test1");
+                await e(async () => {
+                  return true;
+                });
+              });
+            });
+
+            D.describe("d1", () => {
+              D.it("test2", async e => {
+                fn("test2");
+                await e(async () => {
+                  return true;
+                });
+              });
+            });
+          });
+
+          await core.runEvaluator(D.report());
+
+          expect(fn.mock.calls).toEqual([["test1"], ["after1"], ["test2"]]);
+        });
+
+        it("error generated in before", async () => {
+          const fn = jest.fn();
+
+          let i = 0;
+          D.describe("base", () => {
+            D.describe("f0", () => {
+              D.before(() => {
+                fn("before1");
+              });
+              D.it("test1", async e => {
+                fn("test1");
+                await e(async () => {
+                  return true;
+                });
+              });
+            });
+
+            D.describe("d1", () => {
+              D.before(() => {
+                fn("before2", ++i);
+                if (i === 1) throw "";
+              });
+              D.it("test2", async e => {
+                fn("test2");
+                await e(async () => {
+                  return true;
+                });
+              });
+            });
+          });
+
+          await core.runEvaluator(D.report());
+
+          expect(fn.mock.calls).toEqual([
+            ["before1"],
+            ["test1"],
+            ["before2", 1],
+            ["before2", 2],
+            ["test2"]
+          ]);
+        });
+      });
+    });
   });
 });

@@ -2,11 +2,12 @@
   "name": "nimm-test-core",
   "version": "1.0.0",
   "description": "nimm test core",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
     "test": "jest",
     "start": "node ./src/cli.js"
   },
+  "bin": "src/cli.js",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/yevgeniy/nimm-test-core.git"

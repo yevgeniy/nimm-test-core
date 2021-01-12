@@ -1,20 +1,50 @@
-const expect = async (fn, opts) => {
-  return await fn();
-};
-
 const runTest = (fn, args) => {
   const out = async f => {
-    let r = fn(async (truthEvaluatorFn, truthEvaluatorOpts) => {
-      const ti = +new Date();
-      const res = await expect(truthEvaluatorFn, truthEvaluatorOpts);
-      f(res, truthEvaluatorOpts, +new Date() - ti);
-    });
+    let r;
+    try {
+      r = fn((truthEvaluatorFn, truthEvaluatorOpts) => {
+        const ti = +new Date();
+        let r;
+        try {
+          r = truthEvaluatorFn();
+        } catch (e) {
+          throw e;
+        }
 
-    r = r && r.then ? await r : r;
+        if (r && r.then) {
+          return r
+            .then(res => {
+              f(res, truthEvaluatorOpts, +new Date() - ti);
+            })
+            .catch(e => {
+              throw e;
+            });
+        } else {
+          f(r, truthEvaluatorOpts, +new Date() - ti);
+        }
+      });
+    } catch (e) {
+      throw e;
+    }
 
-    r = args ? r(args) : r;
+    if (r && r.then) {
+      r = await r.catch(e => {
+        throw e;
+      });
+    }
 
-    r = r && r.then ? await r : r;
+    if (args) {
+      try {
+        r = r(args);
+      } catch (e) {
+        throw e;
+      }
+      if (r && r.then) {
+        r = await r.catch(e => {
+          throw e;
+        });
+      }
+    }
   };
 
   return {

@@ -37,5 +37,20 @@ module.exports = {
 
     const [, src] = part.split("=");
     return src ? new RegExp(src) : null;
+  },
+  getReporters: () => {
+    const parts = process.argv.filter(v => v.trim().match(/^--reporter/));
+    if (!parts.length) return null;
+
+    return parts
+      .map(part => {
+        const [, src] = part.split("=");
+        return src ? require(src) : null;
+      })
+      .filter(v => v);
+  },
+  getShowResult: () => {
+    const part = process.argv.find(v => v.trim().match(/^--showresult/i));
+    return !!part;
   }
 };
