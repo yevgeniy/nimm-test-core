@@ -1,5 +1,5 @@
 const DiscoverDefault = require("./discoverer");
-const { expect } = require("./evaluator");
+const { wait, waitFor, doWaitFor } = require("./evaluator");
 
 module.exports = {
   describe: DiscoverDefault.describe,
@@ -9,6 +9,9 @@ module.exports = {
   afterEach: DiscoverDefault.afterEach,
   it: DiscoverDefault.it,
   each: DiscoverDefault.each,
-  expect,
+  wait,
+  waitFor,
+  doWaitFor,
+
   __esModule: true
 };

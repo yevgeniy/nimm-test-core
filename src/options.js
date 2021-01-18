@@ -32,7 +32,7 @@ module.exports = {
     return require(path);
   },
   getMatch: () => {
-    const part = process.argv.find(v => v.trim().match(/^--evaluator/));
+    const part = process.argv.find(v => v.trim().match(/^--match/));
     if (!part) return null;
 
     const [, src] = part.split("=");

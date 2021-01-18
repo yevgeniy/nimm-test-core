@@ -1,10 +1,10 @@
 const options = require("./options");
-const NimmTestCore = require("./NimmTestCore");
+const NimmTestCore = require("./NimmTestCore").default;
 const fs = require("fs");
 
 const src = options.getSrc();
-const numberOfTries = options.getNumberOfTries();
-const discoverer = options.getDiscoverer() || require("./discoverer");
+let numberOfTries = options.getNumberOfTries();
+const discoverer = options.getDiscoverer() || require("./discoverer").default;
 const evaluator = options.getEvaluator() || require("./evaluator");
 const match = options.getMatch();
 const reporters = options.getReporters() || [];
@@ -28,8 +28,13 @@ const profile = {
   evaluator,
   match
 };
-core.run(profile).then(res => {
-  showresult && console.log(res);
-  if (res && res.failed > 0) process.exit(1);
-  else process.exit(0);
-});
+core
+  .run(profile)
+  .then(res => {
+    showresult && console.log(res);
+    if (res && res.failed > 0) process.exit(1);
+    else process.exit(0);
+  })
+  .catch(e => {
+    throw e;
+  });

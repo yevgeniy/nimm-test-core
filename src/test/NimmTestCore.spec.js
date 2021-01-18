@@ -247,6 +247,54 @@ describe("NimmTestCore", () => {
         core.match = /foo$/;
       });
 
+      describe("match in before", () => {
+        it("execute before in a matched domaiin", async () => {
+          const fn = jest.fn();
+          D.describe("d1", () => {
+            D.describe("foo", () => {
+              D.before(() => {
+                fn("before");
+              });
+              D.it("test", () => {
+                fn("test");
+              });
+            });
+          });
+
+          await core.evaluate(D.report());
+          expect(fn.mock.calls).toEqual([["before"], ["test"]]);
+        });
+        it("execute domain only if there are tests in it", async () => {
+          const fn = jest.fn();
+          D.describe("d1", () => {
+            D.describe("foo", () => {
+              D.before(() => {
+                fn("before");
+              });
+            });
+          });
+
+          await core.evaluate(D.report());
+          expect(fn.mock.calls).toEqual([]);
+        });
+        it("execute domain only if there are non ignored tests", async () => {
+          const fn = jest.fn();
+          D.describe("d1", () => {
+            D.describe("foo", () => {
+              D.before(() => {
+                fn("before");
+              });
+              D.it("test1", () => {
+                fn("test1");
+              });
+            });
+          });
+
+          await core.evaluate(D.report(), ["d1|foo@test1"]);
+          expect(fn.mock.calls).toEqual([]);
+        });
+      });
+
       it("execute the entire domain", async () => {
         const fn = jest.fn();
         D.describe("d1", () => {
@@ -266,6 +314,7 @@ describe("NimmTestCore", () => {
 
         expect(fn.mock.calls).toEqual([["test2"], ["test3"]]);
       });
+
       it("execute matched tests", async () => {
         const fn = jest.fn();
         D.describe("d1", () => {
@@ -356,23 +405,201 @@ describe("NimmTestCore", () => {
             e(() => true);
           });
           D.it("testFAIL", e => {
-            e(() => false);
+            e(() => false, { duration: 0 });
           });
           D.it("testFAULT", e => {
-            e(() => x++ !== 0);
+            x++;
+            e(() => (x == 1 ? false : true), { duration: 0 });
           });
           D.it("test3", e => {
-            e(() => true);
+            e(() => true, { duration: 0 });
           });
         });
 
         const res = await core.runEvaluator(D.report());
-        console.log(res);
+
         expect(res).toEqual({
           passedTests: ["base@test2", "base@testFAULT", "base@test3"],
           failedTests: ["base@testFAIL"],
           faultTests: ["base@testFAULT"],
           failed: 1
+        });
+      });
+    });
+
+    describe("evaluator duration", () => {
+      let core;
+      beforeEach(() => {
+        core = new NimmTestCore();
+        core.evaluator = E;
+        core.match = /./;
+        core.numberOfTries = 2;
+        D.reset();
+      });
+      it("waits for a truthy value for the duration", async () => {
+        let x = 0;
+        const fn = jest.fn();
+        D.describe("base", () => {
+          D.it("First Test", e => {
+            const ti = +new Date();
+            const waitFor = 200;
+            fn("started test");
+            e(
+              () => {
+                const r = +new Date() - ti < waitFor ? false : true;
+                fn("test1", r);
+                return r;
+              },
+              { frequency: 100 }
+            );
+            e(
+              /*make 2nd test wait for longer*/
+              () => {
+                const r = +new Date() - ti < waitFor + 200 ? false : true;
+                fn("test2", r);
+                return r;
+              },
+              { frequency: 100 }
+            );
+          });
+        });
+        const res = await core.runEvaluator(D.report());
+
+        expect(fn.mock.calls).toEqual([
+          ["started test"],
+          ["test1", false],
+          ["test2", false],
+          ["test1", false],
+          ["test2", false],
+          ["test1", true] /*1st evaluation passed*/,
+          ["test2", false],
+          ["test2", false],
+          ["test2", true] /*2nd evaluation passed*/
+        ]);
+        expect(res.passedTests.length).toBe(1);
+      });
+      it("async evaluators", async () => {
+        let x = 0;
+        const fn = jest.fn();
+        D.describe("base", () => {
+          D.it("First Test", async e => {
+            const ti = +new Date();
+            const waitFor = 200;
+            fn("started test");
+            await e(
+              () => {
+                const r = +new Date() - ti < waitFor ? false : true;
+                fn("test1", r);
+                return r;
+              },
+              { frequency: 100 }
+            );
+            await e(
+              /*make 2nd test wait for longer*/
+              async () => {
+                await new Promise(res => setTimeout(res, 1));
+                const r = +new Date() - ti < waitFor + 200 ? false : true;
+                fn("test2", r);
+                return r;
+              },
+              { frequency: 100 }
+            );
+          });
+        });
+        const res = await core.runEvaluator(D.report());
+
+        expect(fn.mock.calls).toEqual([
+          ["started test"],
+          ["test1", false],
+          ["test1", false],
+          ["test1", true],
+          ["test2", false] /*2nd evaluator waits for the 1st to finish*/,
+          ["test2", false],
+          ["test2", true]
+        ]);
+        expect(res.passedTests.length).toBe(1);
+      });
+
+      it("2nd test should wait untill previous test succeeded", async () => {
+        let x = 0;
+        const fn = jest.fn();
+        D.describe("base", () => {
+          D.it("First Test", e => {
+            const ti = +new Date();
+            const waitFor = 200;
+            fn("started test");
+            e(
+              () => {
+                const r = +new Date() - ti < waitFor ? false : true;
+                fn("test1", r);
+                return r;
+              },
+              { frequency: 100 }
+            );
+          });
+          D.it("2nd test", e => {
+            fn("test2");
+            e(() => true);
+          });
+        });
+        const res = await core.runEvaluator(D.report());
+        expect(fn.mock.calls).toEqual([
+          ["started test"],
+          ["test1", false],
+          ["test1", false],
+          ["test1", true] /*first test passed*/,
+          ["test2"] /*2nd test started*/
+        ]);
+      });
+
+      describe("failing evaluator", () => {
+        beforeEach(() => {
+          core = new NimmTestCore();
+          core.evaluator = E;
+          core.match = /./;
+          core.numberOfTries = 1;
+          D.reset();
+        });
+        it("failing evaluator", async () => {
+          let x = 0;
+          const fn = jest.fn();
+          D.describe("base", () => {
+            D.it("First Test", async e => {
+              await e(
+                () => {
+                  fn("try test");
+                  return false;
+                },
+                { duration: 300, frequency: 100 }
+              );
+            });
+          });
+          const res = await core.runEvaluator(D.report());
+          expect(fn.mock.calls).toEqual([
+            ["try test"],
+            ["try test"],
+            ["try test"],
+            ["try test"]
+          ]);
+          expect(res.failed).toBe(1);
+        });
+        it("erring evaluator", async () => {
+          let x = 0;
+          const fn = jest.fn();
+          D.describe("base", () => {
+            D.it("First Test", async e => {
+              await e(
+                () => {
+                  fn("try test");
+                  throw "error";
+                },
+                { duration: 300, frequency: 100 }
+              );
+            });
+          });
+          const res = await core.runEvaluator(D.report());
+          expect(fn.mock.calls.every(v => v[0] === "try test")).toBe(true);
+          expect(res.failed).toBe(1);
         });
       });
     });
@@ -393,9 +620,12 @@ describe("NimmTestCore", () => {
         D.describe("base", () => {
           D.it("test2", async e => {
             fn("try", ++i);
-            await e(async () => {
-              return false;
-            });
+            await e(
+              async () => {
+                return false;
+              },
+              { duration: 0 }
+            );
           });
         });
 
@@ -501,9 +731,12 @@ describe("NimmTestCore", () => {
             D.describe("d1", () => {
               D.it("test2", async e => {
                 fn("test2", ++i);
-                await e(async () => {
-                  return false;
-                });
+                await e(
+                  async () => {
+                    return false;
+                  },
+                  { duration: 0 }
+                );
               });
             });
           });

@@ -142,43 +142,56 @@ class EvaluateInstance {
     const evaluateIt = async (key, val) => {
       const [fn, args] = val;
       const fullTestName = prefix.join("|") + `@${key}`;
-      this.log.push(fullTestName);
       this.currentTestPhase = fullTestName;
 
       for (const beforeEachFn of [...beforeeach, ...(def["@beforeEach"] || [])])
         await beforeEachFn();
 
       this.currentTestPhase = fullTestName;
-      await this.evaluator.runTest(fn, args).out((didPass, opts, time) => {
-        this.log.push(`${fullTestName} -- ${didPass}`);
-
-        if (!didPass) {
-          this.failed = true;
-          this.phase = fullTestName;
-          throw new Error("NIMM FAILED TEST ERROR");
-        }
+      //console.log("RUNNING TEST:", fullTestName);
+      await this.evaluator.runTest(fn, args).catch(e => {
+        this.failed = true;
+        //console.log(e);
+        throw e;
       });
+      //console.log("b", fullTestName);
+
       this.passedTests.push(fullTestName);
       this.currentTestPhase = null;
 
       for (const afterEachFn of [...(def["@afterEach"] || []), ...aftereach])
         await afterEachFn();
     };
-    const lookAhead = (def, prefix) => {
-      for (let key in def) {
-        let fullTestName = prefix.join("|") + `@${key}`;
+    const lookAhead = (def, prefix, domainMatched) => {
+      /*look ahead and give a test responsible for success*/
+      domainMatched =
+        domainMatched || (prefix.slice(-1)[0] || "").match(this.match);
 
+      for (let key in def) {
+        /* ignore keywords */
         if (key[0] === "@") continue;
-        if (
-          key.match(this.match) &&
-          this.ignoreTests.indexOf(prefix.join("|") + `@${key}`) === -1
-        )
-          return fullTestName;
-        if (def[key].constructor === Object) {
-          const res = lookAhead(def[key], [...prefix, key]);
+        else if (def[key].constructor !== Object) {
+          /*this is a test*/
+          let fullTestName = prefix.join("|") + `@${key}`;
+          /*ignore ignored tests*/
+          if (this.ignoreTests.indexOf(fullTestName) > -1) continue;
+
+          /*if we already mached (on a domain) then we return the first
+          test we find*/
+          if (domainMatched) return fullTestName;
+
+          /*...else return this test only if it matches*/
+          if (key.match(this.match)) {
+            return fullTestName;
+          }
+        } else {
+          /*this is a domain, evaluate it.  If it returns truthy then return it.*/
+          const res = lookAhead(def[key], [...prefix, key], domainMatched);
           if (res) return res;
         }
       }
+
+      /*parsed the whole domain w/ out a match*/
       return null;
     };
 
