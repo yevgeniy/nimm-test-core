@@ -1,7 +1,9 @@
+const assert = require("assert");
+
 const DURATION = 10000;
 const FREQUENCY = 1000;
 
-const runTruthEvaluator = (fn, opts = {}) => {
+const waitFor = (fn, opts = {}) => {
   if (isNaN(opts.duration)) opts.duration = DURATION;
   if (isNaN(opts.frequency)) opts.frequency = FREQUENCY;
 
@@ -29,8 +31,7 @@ const runTruthEvaluator = (fn, opts = {}) => {
     const evaluateResult = r => {
       if (!!r) res(r);
       else {
-        if (+new Date() - ti > opts.duration)
-          rej(new Error("NIMM FAILED TEST ERROR"));
+        if (+new Date() - ti > opts.duration) res(r);
         else setTimeout(runAgain, opts.frequency);
       }
     };
@@ -49,7 +50,7 @@ const doWaitFor = (dofn, waitfn, opts = {}) => {
   return new Promise(async (res, rej) => {
     for (let x = 0; x < opts.tries; x++) {
       await wait(dofn, opts).catch(rej);
-      const r = await runTruthEvaluator(waitfn, opts).catch(rej);
+      const r = await waitFor(waitfn, opts).catch(rej);
       if (!!r) res(r);
     }
     res();
@@ -89,40 +90,18 @@ const wait = (fn, opts = {}) => {
     runAgain();
   });
 };
-
-const runTest = (testFn, args) => {
-  const evaluators = [];
-  const expectFn = (truthEvaluatorFn, truthEvaluatorOpts) => {
-    const prom = runTruthEvaluator(truthEvaluatorFn, truthEvaluatorOpts).catch(
-      e => {
-        throw e;
-      }
-    );
-
-    evaluators.push(prom);
-    return prom;
-  };
-
-  return new Promise((res, rej) => {
-    let r = testFn(expectFn);
-    args && (r = r(args));
-
-    if (!r || !r.then) r = Promise.resolve(r);
-
-    r.catch(rej).then(() => {
-      if (evaluators.length)
-        Promise.all(evaluators)
-          .catch(rej)
-          .then(res);
-      else res();
-    });
+const expect = async (fn, opts = {}) => {
+  const r = await waitFor(fn, opts).catch(e => {
+    throw e;
   });
+
+  assert.equal(!!r, true);
 };
 
 module.exports = {
   __esModule: true,
-  runTest,
   wait,
-  waitFor: runTruthEvaluator,
-  doWaitFor
+  waitFor,
+  doWaitFor,
+  expect
 };

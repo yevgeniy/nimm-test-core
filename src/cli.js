@@ -1,12 +1,10 @@
 const options = require("./options");
-const NimmTestCore = require("./NimmTestCore").default;
 const fs = require("fs");
 const Mocha = require("mocha");
 
 const src = options.getSrc();
 let numberOfTries = options.getNumberOfTries();
 const match = options.getMatch();
-const reporters = options.getReporters() || [];
 const showresult = options.getShowResult() || false;
 
 if (!src) throw new Error("need --src");
@@ -20,6 +18,7 @@ let runner;
 function run(ignore, discovered) {
   const passedTests = [];
   let failedTest;
+  let out = {};
   return new Promise((res, rej) => {
     runner && runner.dispose();
 
@@ -27,24 +26,27 @@ function run(ignore, discovered) {
     if (discovered) {
       let consideredTests = discovered.filter(v => ignore.indexOf(v) == -1);
 
-      console.log("ignore: ", ignore);
-      console.log("considered: ", consideredTests);
-
       if (match)
         consideredTests = consideredTests.filter(v => !!v.match(match));
 
+      if (!consideredTests.length) {
+        /*got all tests*/
+        res({ passedTests });
+        return;
+      }
       adjustedMatch = new RegExp(consideredTests.map(v => `^${v}`).join("|"));
     }
 
     runner = new Mocha({
       bail: true,
       grep: adjustedMatch || match,
-      parallel: false
+      parallel: false,
+      timeout: 500000
+      //allowUncaught: true
     });
     runner.addFile(src);
 
     try {
-      console.log("START");
       runner
         .run()
         .on("pass", r => {
@@ -53,17 +55,16 @@ function run(ignore, discovered) {
         })
         .on("fail", r => {
           failedTest = getFullTestName(r);
-          res({
+          out = {
             failed: true,
             failedTest,
             passedTests,
             discoveredTests: discoverAllTests(runner)
-          });
+          };
         })
         .on("end", r => {
-          console.log("end");
-
           res({
+            ...out,
             passedTests
           });
         });
@@ -102,8 +103,6 @@ async function runEvaluator() {
 
       failedTest = res.failedTest;
       faultTests = Array.from(new Set([...faultTests, failedTest]));
-
-      //      console.log("a", x, numberOfTries);
 
       x++;
       if (x >= numberOfTries) {
@@ -154,9 +153,8 @@ function discoverAllTests(runner) {
 }
 
 function report(results) {
-  console.log(results);
+  if (showresult) console.log(results);
   if (results.failed) {
-    console.log("failed");
     process.exit(1);
   } else process.exit(0);
 }
